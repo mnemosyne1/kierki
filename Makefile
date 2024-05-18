@@ -8,12 +8,14 @@ TARGET2 = kierki-serwer
 
 all: $(TARGET1) $(TARGET2)
 
-$(TARGET1): $(TARGET1).o err.o
+$(TARGET1): $(TARGET1).o err.o card.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
-$(TARGET2): $(TARGET2).o err.o
+$(TARGET2): $(TARGET2).o err.o card.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
 
+card.o: card.cpp card.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 kierki-klient.o: client.cpp client_parser.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 kierki-serwer.o: server.cpp server_parser.h
