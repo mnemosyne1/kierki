@@ -24,7 +24,7 @@ namespace details {
 server_config get_server_config (int argc, char *argv[]) {
     server_config ans;
     int opt;
-    bool file_set = 0;
+    bool file_set = false;
     while ((opt = getopt(argc, argv, "p:f:t:")) != -1) {
         switch (opt) {
             case 'p':
@@ -32,7 +32,7 @@ server_config get_server_config (int argc, char *argv[]) {
                 break;
             case 'f':
                 ans.filename = optarg;
-                file_set = 1;
+                file_set = true;
                 break;
             case 't':
                 ans.timeout = std::atoi(optarg);

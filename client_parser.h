@@ -8,7 +8,7 @@
 
 struct client_config {
     std::string host;
-    int port;
+    std::string port;
     int ipv = AF_UNSPEC;
     char seat;
     bool auto_player = 0;
@@ -30,18 +30,18 @@ namespace details {
 client_config get_client_config (int argc, char *argv[]) {
     client_config ans;
     int opt;
-    bool host_set = 0;
-    bool port_set = 0;
-    bool seat_set = 0;
+    bool host_set = false;
+    bool port_set = false;
+    bool seat_set = false;
     while ((opt = getopt(argc, argv, "h:p:46NESWa")) != -1) {
         switch (opt) {
             case 'h':
                 ans.host = optarg;
-                host_set = 1;
+                host_set = true;
                 break;
             case 'p':
-                ans.port = std::atoi(optarg);
-                port_set = 1;
+                ans.port = optarg;
+                port_set = true;
                 break;
             case '4':
                 ans.ipv = AF_INET;
@@ -53,11 +53,11 @@ client_config get_client_config (int argc, char *argv[]) {
             case 'E':
             case 'S':
             case 'W':
-                ans.seat = opt;
-                seat_set = 1;
+                ans.seat = static_cast<char>(opt);
+                seat_set = true;
                 break;
             case 'a':
-                ans.auto_player = 1;
+                ans.auto_player = true;
                 break;
             default:
                 details::end();
