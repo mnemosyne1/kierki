@@ -1,0 +1,4 @@
+.vscode/
+*.o
+kierki-klient
+kierki-serwer
