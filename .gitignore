@@ -1,4 +1,8 @@
-.vscode/
+/.vscode/
+/.idea/
 *.o
 kierki-klient
 kierki-serwer
+*.txt
+*.in
+*.out

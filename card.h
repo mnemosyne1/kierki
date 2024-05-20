@@ -1,10 +1,11 @@
 #ifndef GAME_H
 #define GAME_H
 
+#include <cstdint>
 #include <string>
 #include <compare>
 
-enum class Value : char {
+enum class Value : uint8_t {
     C2,
     C3,
     C4,
@@ -19,17 +20,20 @@ enum class Value : char {
     K,
     A
 };
+enum class Suit : uint8_t {C, D, H, S};
 
 class Card {
 private:
     Value value;
-    char suit;
+    Suit suit;
 public:
-    Card(const int &value, const char &suit);
+    Card(const int &value, const int &suit);
     explicit Card(std::string desc);
+    //explicit Card(const uint8_t &hash);
     // card of different suit is always considered worse
     std::strong_ordering operator<=>(const Card &other) const;
-    std::string to_string();
+    [[nodiscard]] std::string to_string() const;
+    //[[nodiscard]] uint8_t hash() const;
 };
 
 #endif

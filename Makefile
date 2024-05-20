@@ -1,5 +1,5 @@
 CXX     = g++
-CXXFLAGS = -Wall -Wextra -O2 -std=c++20
+CXXFLAGS = -Wall -Wextra -O2 -std=c++2b
 
 .PHONY: all clean
 
@@ -8,19 +8,22 @@ TARGET2 = kierki-serwer
 
 all: $(TARGET1) $(TARGET2)
 
-$(TARGET1): $(TARGET1).o err.o card.o
+$(TARGET1): $(TARGET1).o err.o card.o common.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
-$(TARGET2): $(TARGET2).o err.o card.o
+$(TARGET2): $(TARGET2).o err.o card.o common.o server_gm.o server_players.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-
-card.o: card.cpp card.h
+kierki-klient.o: client.cpp parser.h client_communication.h common.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-kierki-klient.o: client.cpp client_parser.h
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-kierki-serwer.o: server.cpp server_parser.h
+kierki-serwer.o: server.cpp parser.h server_communication.h server_gm.h server_players.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 err.o: err.c err.h
+common.o: common.cpp common.h card.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+server_gm.o: server_gm.cpp server_gm.h card.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+%.o: %.cpp %.h
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 
 clean:
