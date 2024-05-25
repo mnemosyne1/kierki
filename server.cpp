@@ -1,26 +1,14 @@
-#include <array>
 #include <fstream>
-#include <iostream>
 #include <poll.h>
 #include <thread>
 #include <unistd.h>
+#include <vector>
 #include <sys/eventfd.h>
-#include <sys/fcntl.h>
 
 #include "parser.h"
 #include "server_communication.h"
-#include "server_gm.h"
 #include "server_players.h"
-
-void create_pipes(std::array<int, 4> &sends, std::array<int, 4> &rcvs) {
-    int fds[2];
-    for (int i = 0; i < 4; i++) {
-        if (pipe2(fds, O_DIRECT) < 0)
-            syserr("couldn't create a pipe");
-        rcvs[i] = fds[0];
-        sends[i] = fds[1];
-    }
-}
+#include <linux/net_tstamp.h>
 
 int main(int argc, char *argv[]) {
     server_config config = get_server_config(argc, argv);
@@ -36,12 +24,10 @@ int main(int argc, char *argv[]) {
     fds[0] = {.fd = socket_fd, .events = POLLIN, .revents = 0};
     fds[1] = {.fd = game_over_fd, .events = POLLIN, .revents = 0};
 
-    std::array<int, 4> gm_rcv{}, gm_send{}, from_gm{}, to_gm{};
-    create_pipes(to_gm, gm_rcv);
-    create_pipes(gm_send, from_gm);
-    std::thread gm(game_master, gm_rcv, gm_send, std::ref(desc), game_over_fd);
-    sockaddr_in6 client_address{};
+    std::thread gm(game_master, std::ref(desc), game_over_fd);
+    sockaddr_storage client_address{}, server_address{};
     socklen_t addr_size = (socklen_t){sizeof client_address};
+    std::vector<std::thread> clients;
 
     do {
         poll (fds, 2, -1);
@@ -52,14 +38,30 @@ int main(int argc, char *argv[]) {
         }
         if (fds[0].revents & POLLIN) { // new client tries to connect
             fds[0].revents = 0;
-            int client_fd = accept(socket_fd,
-                                   (struct sockaddr *) &client_address,
-                                   &addr_size);
-            std::thread client(handle_player, client_fd, client_address, to_gm, from_gm, config.timeout);
-            client.detach();
+            addr_size = (socklen_t){sizeof client_address};
+            int client_fd = accept(socket_fd, (sockaddr *) &client_address, &addr_size);
+            addr_size = (socklen_t){sizeof server_address};
+            if (getsockname(client_fd, (sockaddr *) &server_address, &addr_size)) {
+                error("getsockname");
+                close(client_fd);
+                continue;
+            }
+            int enable = SOF_TIMESTAMPING_TX_SOFTWARE |
+                         SOF_TIMESTAMPING_RX_SOFTWARE |
+                         SOF_TIMESTAMPING_SOFTWARE;
+            if (setsockopt(client_fd, SOL_SOCKET, SO_TIMESTAMPING,
+                           &enable, sizeof(int)) < 0) {
+                error("setsockopt");
+                close(client_fd);
+                continue;
+            }
+            clients.emplace_back(handle_player, client_fd, client_address,
+                                server_address, config.timeout);
         }
     } while (true);
     gm.join();
+    for (auto &client: clients)
+        client.join();
     desc.close();
 
     return 0;

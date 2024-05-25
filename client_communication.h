@@ -5,7 +5,8 @@
 #include <cstring>
 #include "common.h"
 
-int socket_init (const std::string& host, const std::string &port, const int &ipv) {
+int socket_init (const std::string& host, const std::string &port,
+                 const int &ipv, sockaddr_storage *server_address) {
     addrinfo hints, *server_info;
     memset(&hints, 0, sizeof(hints));
     hints.ai_family = ipv;
@@ -23,15 +24,15 @@ int socket_init (const std::string& host, const std::string &port, const int &ip
         close(socket_fd);
         syserr("cannot connect to server");
     }
+    memcpy(server_address, server_info->ai_addr, server_info->ai_addrlen);
     freeaddrinfo(server_info);
     return socket_fd;
 }
 
-bool send_IAM (const int &socket_fd, const char &seat) {
+bool send_IAM (SendData &send_data, const char &seat) {
     static constexpr ssize_t IAM_LEN = 6;
-    char msg[6] = {'I', 'A', 'M', '_', '\r', '\n'};
-    msg[3] = seat;
-    return (writen(socket_fd, msg, IAM_LEN) == IAM_LEN);
+    const char msg[6] = {'I', 'A', 'M', seat, '\r', '\n'};
+    return (writen(send_data, msg, IAM_LEN) == IAM_LEN);
 }
 
 std::string get_line (const int &socket_fd) {

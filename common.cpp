@@ -1,94 +1,115 @@
 #include <sys/types.h>
-#include <stddef.h>
+#include <cmath>
 #include <unistd.h>
+#include <mutex>
+#include <iomanip>
+#include <iostream>
+#include <arpa/inet.h>
 
 #include "common.h"
 
+constexpr timespec handle_time(struct msghdr* msg) {
+    cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
+    while (cmsg != nullptr && cmsg->cmsg_level != SOL_SOCKET)
+        cmsg = CMSG_NXTHDR(msg,cmsg);
+    // assert (cmsg->cmsg_type == SO_TIMESTAMPNS || cmsg->cmsg_type == SO_TIMESTAMPING)
+    auto *ts = (timespec *) CMSG_DATA(cmsg);
+    return ts[0];
+}
+
 // Following two functions come from Stevens' "UNIX Network Programming" book.
+// ...but have been adapted to this task by myself (JO)
 // Read n bytes from a descriptor. Use in place of read() when fd is a stream socket.
-ssize_t readn(int fd, void *vptr, size_t n) {
+ssize_t readn(SendData &send_data, void *vptr, size_t n) {
     ssize_t nleft, nread;
     char *ptr;
 
     ptr = (char*) vptr;
     nleft = n;
+    timespec t{};
     while (nleft > 0) {
-        if ((nread = read(fd, ptr, nleft)) < 0)
+        msghdr tmp{};
+        static char control[1024];
+        iovec a = {.iov_base = ptr, .iov_len = static_cast<size_t>(nleft)};
+        tmp.msg_iov = &a;
+        tmp.msg_iovlen = 1;
+        tmp.msg_control = control;
+        tmp.msg_controllen = sizeof control;
+        if ((nread = recvmsg(send_data.get_fd(), &tmp, 0)) < 0)
             return nread;     // When error, return < 0.
         else if (nread == 0)
             break;            // EOF
+        t = handle_time(&tmp);
 
         nleft -= nread;
         ptr += nread;
     }
+    send_data.log_message(static_cast<const char *>(vptr), t, false);
     return n - nleft;         // return >= 0
 }
 
 // Write n bytes to a descriptor.
-ssize_t writen(int fd, const void *vptr, size_t n){
+ssize_t writen(SendData &send_data, const void *vptr, size_t n){
     ssize_t nleft, nwritten;
     const char *ptr;
 
     ptr = (const char*) vptr;  // Can't do pointer arithmetic on void*.
     nleft = n;
+    timespec t{};
     while (nleft > 0) {
-        if ((nwritten = write(fd, ptr, nleft)) <= 0)
+        if ((nwritten = write(send_data.get_fd(), ptr, nleft)) <= 0)
             return nwritten;  // error
+        msghdr tmp{};
+        static char control[1024];
+        tmp.msg_iov = nullptr;
+        tmp.msg_iovlen = 0;
+        tmp.msg_control = control;
+        tmp.msg_controllen = sizeof control;
+        static ssize_t nread;
+        if ((nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE)) < 0)
+            return nread;
+        t = handle_time(&tmp);
 
         nleft -= nwritten;
         ptr += nwritten;
     }
+    send_data.log_message(static_cast<const char *>(vptr), t, true);
     return n;
 }
 
-int get_index_from_seat(char seat) {
-    switch (seat) {
-        case 'N':
-            return 0;
-        case 'E':
-            return 1;
-        case 'S':
-            return 2;
-        case 'W':
-            return 3;
-        default:
-            return -1;
+// returns <ip>:<port>, (ENDING WITH A COMMA)
+std::string get_ip(const sockaddr_storage &address) {
+    std::stringstream ss;
+    auto* addr = (sockaddr_in6*)&address;
+    if (IN6_IS_ADDR_V4MAPPED(&addr->sin6_addr)) { // IPv4
+        auto* addr_4 = (sockaddr_in*) &address;
+        ss << inet_ntoa(addr_4->sin_addr);
     }
+    else { // IPv6
+        char ip[INET6_ADDRSTRLEN];
+        ss << inet_ntop(AF_INET6, &(addr->sin6_addr), ip, INET6_ADDRSTRLEN);
+    }
+    ss << ":" << ntohs(addr->sin6_port) << ",";
+    return ss.str();
 }
 
-char get_seat_from_index(int index) {
-    switch (index) {
-        case 0:
-            return 'N';
-        case 1:
-            return 'E';
-        case 2:
-            return 'S';
-        case 3:
-            return 'W';
-        default:
-            return 0;
-    }
+SendData::SendData(
+        int fd,
+        const sockaddr_storage &sender,
+        const sockaddr_storage &receiver
+) : fd(fd),
+    sender_receiver(get_ip(sender) + get_ip(receiver)),
+    receiver_sender(get_ip(receiver) + get_ip(sender)) {
 }
 
-std::vector<Card> parse_cards(const std::string &input) {
-    size_t i = 0;
-    std::vector<Card> ans;
-    while (i < input.size()) {
-        if (input[i] == '1') { // must be 10
-            ans.emplace_back(input.substr(i, 3)); // 10 + suit
-            i += 3;
-        } else {
-            ans.emplace_back(input.substr(i, 2)); // (2-9/J/Q/K/A) + suit
-            i += 2;
-        }
-    }
-    return ans;
+int SendData::get_fd() const noexcept {
+    return fd;
 }
 
-std::string cards_to_string(const std::vector<Card> &cards) {
-    std::string ans;
-    for (const auto &c : cards)
-        ans += c.to_string();
-    return ans;
+void SendData::log_message(const char *msg, const timespec &t, bool send) {
+    std::stringstream ss;
+    ss << '[' << (send ? sender_receiver : receiver_sender) <<
+        std::put_time(std::localtime(&t.tv_sec), "%Y-%m-%dT%H:%M:%S") << '.' <<
+        std::setw(3) << std::setfill('0') << t.tv_nsec / 1'000'000 << "] " << msg;
+    log.emplace_back(t, ss.str());
 }
