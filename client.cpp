@@ -22,13 +22,49 @@ int main(int argc, char *argv[]) {
         syserr("getsockname");
     }
     SendData send_data(socket_fd, client_address, server_address);
-    if (!send_IAM(send_data, config.seat)) {
-        close(socket_fd);
-        syserr("couldn't send IAM");
+    try {
+        send_IAM(send_data, config.seat);
+        std::string card;
+        auto hand = get_DEAL(send_data);
+        // TODO: poll with stdin
+        while (true) { // FIXME
+            auto trick = get_TRICK<true>(send_data);
+            std::cout << "\nAvailable: ";// << cards_to_string(hand) << std::endl;
+            for (auto c: hand)
+                std::cout << c.to_string() << ' ';
+            std::cout << std::endl;
+            // TODO: da się na starcie dostać TAKEN a nie TRICK
+#if 0
+            do {
+                std::cin >> card; // TODO: other options than !<card>
+                if (card[0] != '!' /*|| std::find(deal.begin(), deal.end(), Card(card.substr(1, card.size() - 1))) == deal.end()*/)
+                    std::cout << "Invalid card\n";
+            } while (card[0] != '!'); // FIXME
+            send_TRICK(send_data, trick.first, std::vector<Card>{Card(card.substr(1, card.size()))});
+#endif
+            while (true) {
+                getline(std::cin, card);
+                try {
+                    send_TRICK(send_data, trick.first, std::vector<Card>{Card(card)});
+                    std::erase(hand, Card(card));
+                    // send_data.print_log();
+                    std::string ans;
+                    if (get_line(send_data, 100, ans) < 0)
+                        throw std::runtime_error("receiving TAKEN");
+                    std::cout << ans; // TODO: TMP
+                    if (ans.substr(0, 5) != "WRONG") // TODO: TMP
+                        break;
+                }
+                catch (const std::invalid_argument&) {
+                    std::cout << "Invalid card\n";
+                }
+            }
+        }
     }
-    std::string deal = get_line(socket_fd);
-    std::cerr << deal;
-    //sleep(10);
-    //send_data.print_log();
+    catch (const std::runtime_error &e) {
+        error(e.what());
+        close(socket_fd);
+        return 1;
+    }
     close(socket_fd);
 }

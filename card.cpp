@@ -39,7 +39,7 @@ constexpr std::string get_from_value (const Value &v) {
     throw std::invalid_argument("Not a value");
 }
 
-constexpr Suit get_suit (const char &s) {
+constexpr Suit get_suit_from_char (const char &s) {
     for (const auto &p : mapping_suit)
         if (p.first == s)
             return p.second;
@@ -57,19 +57,27 @@ Card::Card(const int &value, const int &suit) :
     value(static_cast<Value>(value)), suit(static_cast<Suit>(suit)) {}
 
 Card::Card(std::string desc) {
-    suit = get_suit(desc[desc.size() - 1]);
+    suit = get_suit_from_char(desc[desc.size() - 1]);
     desc.pop_back();
     value = get_value(desc);
 }
 
-std::strong_ordering Card::operator<=>(const Card &other) const {
+/*std::strong_ordering Card::operator<=>(const Card &other) const {
     if (suit != other.suit)
         return std::strong_ordering::greater;
     return value <=> other.value;
-}
+}*/
 
 std::string Card::to_string() const {
     return get_from_value(value) + get_from_suit(suit);
+}
+
+bool Card::operator<(const Card &other) const {
+    return (suit == other.suit) && (value < other.value);
+}
+
+Suit Card::get_suit() const noexcept {
+    return suit;
 }
 
 /*// any in range [13, 81] should work - we need hash to be unique and in range of uint8_t

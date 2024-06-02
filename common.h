@@ -4,10 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <sys/socket.h>
+#include "card.h"
 #include "err.h"
 
-// TODO: TMP
-#include <mutex>
 
 class SendData {
 private:
@@ -23,16 +23,8 @@ public:
     );
     [[nodiscard]] int get_fd() const noexcept;
     void log_message(const char *msg, const timespec &t, bool send);
-    // TODO: TMP
-    void print_log() {
-        static std::mutex mutex;
-        std::unique_lock<std::mutex> lock(mutex);
-        for (const auto& s: log)
-            std::cerr << s.first.tv_nsec << ' ' << s.second;
-    }
+    void append_to_log(std::vector<std::pair<timespec, std::string>> &general_log);
 };
-
-ssize_t readn(SendData &send_data, void *vptr, size_t n);
 
 ssize_t writen(SendData &send_data, const void *vptr, size_t n);
 
@@ -65,5 +57,14 @@ constexpr char get_seat_from_index(int index) {
             throw std::invalid_argument("not a valid index");
     }
 }
+
+ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans);
+// COMMUNICATION
+std::vector<Card> get_DEAL(SendData &send_data);
+void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick);
+char get_IAM(SendData &send_data);
+template <bool client>
+std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed=false);
+const std::string timeout_trick_msg = "timeout on receiving TRICK";
 
 #endif

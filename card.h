@@ -32,8 +32,10 @@ public:
     explicit Card(std::string desc);
     //explicit Card(const uint8_t &hash);
     // card of different suit is always considered worse
-    std::strong_ordering operator<=>(const Card &other) const;
+    bool operator<(const Card &other) const;
+    bool operator==(const Card &other) const = default;
     [[nodiscard]] std::string to_string() const;
+    [[nodiscard]] Suit get_suit() const noexcept;
     //[[nodiscard]] uint8_t hash() const;
 };
 

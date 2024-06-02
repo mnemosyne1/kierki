@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <fstream>
 #include <poll.h>
 #include <thread>
@@ -24,6 +25,7 @@ int main(int argc, char *argv[]) {
     fds[0] = {.fd = socket_fd, .events = POLLIN, .revents = 0};
     fds[1] = {.fd = game_over_fd, .events = POLLIN, .revents = 0};
 
+    Log log;
     std::thread gm(game_master, std::ref(desc), game_over_fd);
     sockaddr_storage client_address{}, server_address{};
     socklen_t addr_size = (socklen_t){sizeof client_address};
@@ -56,13 +58,18 @@ int main(int argc, char *argv[]) {
                 continue;
             }
             clients.emplace_back(handle_player, client_fd, client_address,
-                                server_address, config.timeout);
+                                server_address, config.timeout, std::ref(log));
         }
     } while (true);
     gm.join();
     for (auto &client: clients)
         client.join();
     desc.close();
+    std::stable_sort(log.begin(), log.end(), [](const Log_message &v1, const Log_message &v2){
+        return v1.first.tv_sec != v2.first.tv_sec ? (v1.first.tv_sec < v2.first.tv_sec) : (v1.first.tv_nsec < v2.first.tv_nsec);
+    });
+    for (const auto& l: log)
+        std::cout << l.second;
 
     return 0;
 }

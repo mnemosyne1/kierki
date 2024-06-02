@@ -6,6 +6,7 @@
 #include <bitset>
 #include <condition_variable>
 #include <stdexcept>
+#include <unordered_map>
 #include <unistd.h>
 #include <sys/eventfd.h>
 
@@ -19,12 +20,15 @@ void increment_event_fd(int event_fd, uint64_t val = 1) {
         throw std::runtime_error("incrementing eventfd");
 }
 
-void decrement_event_fd(int event_fd) {
+void decrement_event_fd(int event_fd, uint64_t times = 1) {
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
     uint64_t u;
-    if (read(event_fd, &u, sizeof u) != sizeof u)
-        throw std::runtime_error("decrementing eventfd");
+    while (times > 0) {
+        if (read(event_fd, &u, sizeof u) != sizeof u)
+            throw std::runtime_error("decrementing eventfd");
+        times -= u;
+    }
 }
 
 class ActiveMap {
@@ -59,8 +63,18 @@ public:
         increment_event_fd(event_fd);
     }
 
-    inline void end_game() noexcept {
+    void end_game() noexcept {
         game_over.test_and_set();
+    }
+
+    bool is_active(int pos) noexcept {
+        std::unique_lock<std::mutex> lock(mutex_four);
+        return active_map.test(pos);
+    }
+
+    bool is_four() noexcept {
+        std::unique_lock<std::mutex> lock(mutex_four);
+        return active_map.all();
     }
 
     void wait_for_four() {
@@ -73,25 +87,106 @@ public:
 class GameState {
 private:
     std::array<std::vector<Card>, 4> hands;
-    int current_deal{};
-    std::atomic_char player;
+    int current_deal;
+    char player;
+    std::array<std::vector<Card>, 13> tricks;
+    std::array<char, 13> taken;
+    std::unordered_map<char, int> points_deal;
+    std::unordered_map<char, int> points_total = {{'N', 0}, {'E', 0}, {'S', 0}, {'W', 0}};
+    int current_trick;
+    static auto get_card_points(int deal, Card c) {
+        int ans = 0;
+        if ((deal == 2 || deal == 7) && c.get_suit() == Suit::H)
+            ans++;
+        if ((deal == 3 || deal == 7) && c.to_string()[0] == 'Q')
+            ans += 5;
+        if ((deal == 4 || deal == 7) && (c.to_string()[0] == 'J' || c.to_string()[0] == 'K'))
+            ans += 2;
+        if ((deal == 5 || deal == 7) && c.to_string() == "KH")
+            ans += 18;
+        return ans;
+    }
 public:
     void start_game(const int &pos, const std::vector<Card> &hand, int deal, char first) {
         hands[pos] = hand;
         current_deal = deal;
-        player.store(first);
+        player = first;
+        current_trick = 0;
+        points_deal = {{'N', 0}, {'E', 0}, {'S', 0}, {'W', 0}};
     }
 
     [[nodiscard]] std::vector<Card> get_hand(const int &pos) const noexcept {
         return hands[pos];
     }
 
-    [[nodiscard]] char get_next_player() const noexcept {
-        return player.load();
+    [[nodiscard]] char get_player() const noexcept {
+        return player;
+    }
+
+    [[nodiscard]] int get_pos() const noexcept {
+        return get_index_from_seat(player);
     }
 
     [[nodiscard]] int get_deal() const noexcept {
         return current_deal;
+    }
+
+    [[nodiscard]] int get_trick_no() const noexcept {
+        return current_trick + 1;
+    }
+
+    [[nodiscard]] const std::vector<Card> &get_trick(int trick) const noexcept {
+        return tricks[trick - 1];
+    }
+
+    void play(const Card &c) {
+        tricks[current_trick].push_back(c);
+        if (tricks[current_trick].size() == 4) {
+            Card &highest = tricks[current_trick][0];
+            int start_pos = get_pos();
+            for (int i = 1; i < 4; i++) {
+                if (highest < tricks[current_trick][i]) {
+                    highest = tricks[current_trick][i];
+                    player = get_seat_from_index((start_pos + i) % 4);
+                }
+            }
+            taken[current_trick] = player;
+            for (const auto &card: tricks[current_trick]) {
+                points_deal[player] += get_card_points(current_deal, card);
+            }
+            if (current_deal == 1 || current_deal == 7)
+                points_deal[player]++; // point for each trick
+            if (current_deal >= 6 && (current_trick == 7 || current_trick == 13))
+                points_deal[player] += 10; // points for 7th and 13th trick
+            current_trick++;
+            if (current_trick == 13) // end of deal
+                for (const auto &[k, v]: points_deal)
+                    points_total[k] += v;
+        }
+    }
+
+    std::string get_TAKEN(int trick) {
+        std::stringstream ss;
+        ss << "TAKEN" << trick << cards_to_string(tricks[trick - 1]) << player << "\r\n";
+        return ss.str();
+    }
+
+    std::string get_SCORE() {
+        std::stringstream ss;
+        ss << "SCORE";
+        for (const auto &[k, v]: points_deal)
+            ss << k << v;
+        ss << "\r\n";
+        return ss.str();
+    }
+
+    std::string get_TOTAL() {
+        std::stringstream ss;
+        ss << "TOTAL";
+        for (const auto &[k, v]: points_total)
+            ss << k << v;
+        ss << "\r\n";
+        return ss.str();
     }
 };
 
