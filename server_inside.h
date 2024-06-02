@@ -6,6 +6,7 @@
 #include <bitset>
 #include <condition_variable>
 #include <stdexcept>
+#include <poll.h>
 #include <unordered_map>
 #include <unistd.h>
 #include <sys/eventfd.h>
@@ -31,11 +32,23 @@ void decrement_event_fd(int event_fd, uint64_t times = 1) {
     }
 }
 
+void clear_event_fd(int event_fd) {
+    if (event_fd == -1)
+        throw std::runtime_error("initialising eventfd");
+    pollfd pfd = {.fd = event_fd, .events = POLLIN, .revents = 0};
+    while (true) {
+        poll(&pfd, 1, 0);
+        if (pfd.revents & POLLIN)
+            decrement_event_fd(event_fd);
+        else
+            return;
+    }
+}
+
 class ActiveMap {
 private:
     std::bitset<4> active_map{0};
     std::atomic_flag game_over = ATOMIC_FLAG_INIT;
-
     std::mutex mutex_four;
     std::condition_variable cv_four;
 public:
@@ -82,19 +95,24 @@ public:
         if (!active_map.all())
             cv_four.wait(lock, [this]{return active_map.all();});
     }
+
+    [[nodiscard]] bool is_over() const {
+        return game_over.test();
+    }
 };
 
 class GameState {
 private:
     std::array<std::vector<Card>, 4> hands;
     int current_deal;
+    char first_player;
     char player;
     std::array<std::vector<Card>, 13> tricks;
     std::array<char, 13> taken;
     std::unordered_map<char, int> points_deal;
     std::unordered_map<char, int> points_total = {{'N', 0}, {'E', 0}, {'S', 0}, {'W', 0}};
     int current_trick;
-    static auto get_card_points(int deal, Card c) {
+    static int get_card_points(int deal, Card c) {
         int ans = 0;
         if ((deal == 2 || deal == 7) && c.get_suit() == Suit::H)
             ans++;
@@ -110,17 +128,19 @@ public:
     void start_game(const int &pos, const std::vector<Card> &hand, int deal, char first) {
         hands[pos] = hand;
         current_deal = deal;
-        player = first;
+        first_player = player = first;
         current_trick = 0;
         points_deal = {{'N', 0}, {'E', 0}, {'S', 0}, {'W', 0}};
+        tricks = std::array<std::vector<Card>, 13>();
+        taken = std::array<char, 13>();
     }
 
     [[nodiscard]] std::vector<Card> get_hand(const int &pos) const noexcept {
         return hands[pos];
     }
 
-    [[nodiscard]] char get_player() const noexcept {
-        return player;
+    [[nodiscard]] char get_first() const noexcept {
+        return first_player;
     }
 
     [[nodiscard]] int get_pos() const noexcept {
@@ -167,7 +187,7 @@ public:
 
     std::string get_TAKEN(int trick) {
         std::stringstream ss;
-        ss << "TAKEN" << trick << cards_to_string(tricks[trick - 1]) << player << "\r\n";
+        ss << "TAKEN" << trick << cards_to_string(tricks[trick - 1]) << taken[trick] << "\r\n";
         return ss.str();
     }
 

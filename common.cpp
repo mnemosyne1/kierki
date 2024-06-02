@@ -122,7 +122,7 @@ void SendData::log_message(const char *msg, const timespec &t, bool send) {
 }
 
 static std::mutex mutex;
-void SendData::append_to_log(std::vector<std::pair<timespec, std::string>> &general_log) {
+void SendData::append_to_log(Log &general_log) {
     std::unique_lock<std::mutex> lock(mutex);
     general_log.insert(general_log.end(), log.begin(), log.end());
 }
@@ -133,6 +133,13 @@ constexpr std::string multiply_string(const std::string &input, int times) {
     while (times--)
         ans += input;
     return ans;
+}
+
+void print_list(const std::vector<Card> &cards) {
+    size_t len = cards.size() - 1;
+    for (size_t i = 0; i < len; i++)
+        std::cout << cards[i].to_string() << ", ";
+    std::cout << cards[len].to_string() << std::endl;
 }
 
 std::vector<Card> get_DEAL(SendData &send_data) {
@@ -216,7 +223,7 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allo
         throw std::runtime_error("TAKEN (not implemented yet)"); // FIXME
     }
     else
-        throw std::runtime_error("invalid TRICK");
+        throw std::runtime_error("invalid TRICK: " + trick);
 }
 
 // explicit initialisation

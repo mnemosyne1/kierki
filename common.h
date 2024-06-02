@@ -8,11 +8,12 @@
 #include "card.h"
 #include "err.h"
 
-
+typedef std::pair<timespec, std::string> Log_message;
+typedef std::vector<Log_message> Log;
 class SendData {
 private:
     const int fd;
-    std::vector<std::pair<timespec, std::string>> log;
+    Log log;
     const std::string sender_receiver;
     const std::string receiver_sender;
 public:
@@ -23,7 +24,7 @@ public:
     );
     [[nodiscard]] int get_fd() const noexcept;
     void log_message(const char *msg, const timespec &t, bool send);
-    void append_to_log(std::vector<std::pair<timespec, std::string>> &general_log);
+    void append_to_log(Log &general_log);
 };
 
 ssize_t writen(SendData &send_data, const void *vptr, size_t n);
@@ -58,7 +59,9 @@ constexpr char get_seat_from_index(int index) {
     }
 }
 
-ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans);
+ssize_t get_line(SendData &send_data, size_t max_length, std::string &ans);
+void print_list(const std::vector<Card> &cards);
+
 // COMMUNICATION
 std::vector<Card> get_DEAL(SendData &send_data);
 void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick);

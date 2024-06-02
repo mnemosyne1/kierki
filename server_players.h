@@ -5,9 +5,7 @@
 #include <array>
 #include <fstream>
 #include <vector>
-
-typedef std::pair<timespec, std::string> Log_message;
-typedef std::vector<Log_message> Log;
+#include "common.h"
 
 void handle_player(
     const int &client_fd,
