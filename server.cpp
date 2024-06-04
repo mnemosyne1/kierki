@@ -10,8 +10,10 @@
 #include "server_communication.h"
 #include "server_players.h"
 #include <linux/net_tstamp.h>
+#include <csignal>
 
 int main(int argc, char *argv[]) {
+    signal(SIGPIPE, SIG_IGN);
     server_config config = get_server_config(argc, argv);
     std::ifstream desc(config.filename);
     if (!desc)

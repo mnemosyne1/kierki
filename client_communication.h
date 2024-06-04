@@ -38,13 +38,14 @@ void send_IAM(SendData &send_data, const char &seat) {
         throw std::runtime_error("sending IAM");
 }
 
-constexpr int DEAL = 0;
-constexpr int TRICK = 1;
-constexpr int WRONG = 2;
-constexpr int TAKEN = 3;
-constexpr int SCORE = 4;
-constexpr int TOTAL = 5;
-constexpr int INCORRECT = 6;
+constexpr int BUSY = 0;
+constexpr int DEAL = 1;
+constexpr int TRICK = 2;
+constexpr int WRONG = 3;
+constexpr int TAKEN = 4;
+constexpr int SCORE = 5;
+constexpr int TOTAL = 6;
+constexpr int INCORRECT = 7;
 // FIXME: duplicate
 const std::string CARD_REGEX("((?:[1-9]|10|Q|J|K|A)(?:[CDHS]))");
 constexpr std::string multiply_string(const std::string &input, int times) {
@@ -53,8 +54,8 @@ constexpr std::string multiply_string(const std::string &input, int times) {
         ans += input;
     return ans;
 }
-const std::regex DEAL_REGEX ("DEAL([1-7])([NESW])" +
-                             multiply_string(CARD_REGEX, 13) + "\r\n");
+const std::regex BUSY_REGEX("BUSY" + multiply_string("([NESW])?", 4) + "\r\n");
+const std::regex DEAL_REGEX ("DEAL([1-7])([NESW])" + multiply_string(CARD_REGEX, 13) + "\r\n");
 const std::regex TRICK_REGEX ("TRICK([1-9]|1[0-3])" +
                               multiply_string(CARD_REGEX + '?', 4) + "\r\n");
 const std::regex WRONG_REGEX ("WRONG([1-9|1[0-3])\r\n");
@@ -62,15 +63,20 @@ const std::regex TAKEN_REGEX ("TAKEN([1-9]|1[0-3])" +
                               multiply_string(CARD_REGEX, 4) + "([NESW])\r\n");
 const std::regex SCORE_REGEX("SCORE" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
 const std::regex TOTAL_REGEX("TOTAL" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
-constexpr int REGEXES_NO = 6;
-const std::regex regexes[REGEXES_NO] = {DEAL_REGEX, TRICK_REGEX, WRONG_REGEX,
-                                        TAKEN_REGEX, SCORE_REGEX, TOTAL_REGEX};
+constexpr int REGEXES_NO = 7;
+const std::regex regexes[REGEXES_NO] = {BUSY_REGEX, DEAL_REGEX,
+                                        TRICK_REGEX, WRONG_REGEX,
+                                        TAKEN_REGEX, SCORE_REGEX,
+                                        TOTAL_REGEX};
 
 std::pair<int, std::string> get_message(SendData &send_data) {
     std::pair<int, std::string> ans{INCORRECT, ""};
     // TODO: magic const
-    if (get_line(send_data, 100, ans.second) <= 0)
+    auto tmp = get_line(send_data, 100, ans.second);
+    if (tmp <= 0) {
+        std::cerr << tmp << ' ' << errno << '\n';
         throw std::runtime_error("couldn't receive message");
+    }
     for (int i = 0; i < REGEXES_NO; i++) {
         if (std::regex_match(ans.second, regexes[i])) {
             ans.first = i;

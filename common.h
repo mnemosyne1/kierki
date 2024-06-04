@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <sys/eventfd.h>
 #include <sys/socket.h>
 #include "card.h"
 #include "err.h"
@@ -60,14 +61,16 @@ constexpr char get_seat_from_index(int index) {
 }
 
 ssize_t get_line(SendData &send_data, size_t max_length, std::string &ans);
-void print_list(const std::vector<Card> &cards);
+[[nodiscard]] std::string print_list(const std::vector<Card> &cards);
+void increment_event_fd(int event_fd, uint64_t val = 1);
+void decrement_event_fd(int event_fd, uint64_t times = 1);
+void clear_event_fd(int event_fd);
 
 // COMMUNICATION
-std::vector<Card> get_DEAL(SendData &send_data);
 void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick);
 char get_IAM(SendData &send_data);
-template <bool client>
-std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed=false);
+//template <bool client>
+//std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed=false);
 const std::string timeout_trick_msg = "timeout on receiving TRICK";
 
 #endif

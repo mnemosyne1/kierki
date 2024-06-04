@@ -9,41 +9,9 @@
 #include <poll.h>
 #include <unordered_map>
 #include <unistd.h>
-#include <sys/eventfd.h>
 
 #include "card.h"
 #include "common.h"
-
-void increment_event_fd(int event_fd, uint64_t val = 1) {
-    if (event_fd == -1)
-        throw std::runtime_error("initialising eventfd");
-    if (write(event_fd, &val, sizeof val) != sizeof val)
-        throw std::runtime_error("incrementing eventfd");
-}
-
-void decrement_event_fd(int event_fd, uint64_t times = 1) {
-    if (event_fd == -1)
-        throw std::runtime_error("initialising eventfd");
-    uint64_t u;
-    while (times > 0) {
-        if (read(event_fd, &u, sizeof u) != sizeof u)
-            throw std::runtime_error("decrementing eventfd");
-        times -= u;
-    }
-}
-
-void clear_event_fd(int event_fd) {
-    if (event_fd == -1)
-        throw std::runtime_error("initialising eventfd");
-    pollfd pfd = {.fd = event_fd, .events = POLLIN, .revents = 0};
-    while (true) {
-        poll(&pfd, 1, 0);
-        if (pfd.revents & POLLIN)
-            decrement_event_fd(event_fd);
-        else
-            return;
-    }
-}
 
 class ActiveMap {
 private:
@@ -162,7 +130,7 @@ public:
     void play(const Card &c) {
         tricks[current_trick].push_back(c);
         if (tricks[current_trick].size() == 4) {
-            Card &highest = tricks[current_trick][0];
+            Card highest = tricks[current_trick][0];
             int start_pos = get_pos();
             for (int i = 1; i < 4; i++) {
                 if (highest < tricks[current_trick][i]) {
@@ -187,7 +155,7 @@ public:
 
     std::string get_TAKEN(int trick) {
         std::stringstream ss;
-        ss << "TAKEN" << trick << cards_to_string(tricks[trick - 1]) << taken[trick] << "\r\n";
+        ss << "TAKEN" << trick << cards_to_string(tricks[trick - 1]) << taken[trick - 1] << "\r\n";
         return ss.str();
     }
 

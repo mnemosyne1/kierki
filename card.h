@@ -30,13 +30,11 @@ private:
 public:
     Card(const int &value, const int &suit);
     explicit Card(std::string desc);
-    //explicit Card(const uint8_t &hash);
     // card of different suit is always considered worse
     bool operator<(const Card &other) const;
     bool operator==(const Card &other) const = default;
     [[nodiscard]] std::string to_string() const;
     [[nodiscard]] Suit get_suit() const noexcept;
-    //[[nodiscard]] uint8_t hash() const;
 };
 
 constexpr std::vector<Card> parse_cards(const std::string &input) {

@@ -76,12 +76,70 @@ void send_SCORE(SendData &send_data) {
         throw std::runtime_error("sending TOTAL");
 }
 
+const std::string CARD_REGEX("((?:[1-9]|10|Q|J|K|A)(?:[CDHS]))");
+constexpr std::string multiply_string(const std::string &input, int times) {
+    std::string ans;
+    while (times--)
+        ans += input;
+    return ans;
+}
+std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int timeout) {
+    static const std::regex re("TRICK([1-9]|1[0-3])" +
+                               multiply_string(CARD_REGEX + '?', 4) + "\r\n");
+    std::string trick;
+    std::smatch matches;
+    // TODO: magic const
+    pollfd fds[2];
+    bool waiting_for_unpause = false;
+    while (true) {
+        fds[0] = {.fd = to_pl[pos], .events = POLLIN, .revents = 0};
+        fds[1] = {.fd = send_data.get_fd(), .events = static_cast<short>(waiting_for_unpause ? POLLRDHUP : POLLIN), .revents = 0};
+        if (poll(fds, 2, waiting_for_unpause ? -1 : timeout) == 0) // timeout
+            throw std::runtime_error(timeout_trick_msg);
+        if (fds[0].revents & POLLIN) {
+            decrement_event_fd(to_pl[pos]);
+            std::cerr << "GP WU" << game_paused << ' ' << waiting_for_unpause << '\n';
+            if (game_paused) {
+                waiting_for_unpause = true;
+                continue;
+            }
+            else if (waiting_for_unpause)
+                waiting_for_unpause = false;
+        }
+        // client disconnected
+        if (fds[1].revents & POLLRDHUP) {
+            std::cerr << "Client disconnected\n";
+            throw std::runtime_error("couldn't receive TRICK");
+        }
+        // on client_fd we'd get trick
+        if (fds[1].revents & POLLIN)
+            break;
+    }
+    // FIXME: should poll in get_line ig
+    if (get_line(send_data, 100, trick) <= 0) {
+        if (errno == EAGAIN)
+            throw std::runtime_error(timeout_trick_msg);
+        else
+            throw std::runtime_error("couldn't receive TRICK");
+    }
+    if (std::regex_match(trick, matches, re)) {
+        std::vector<Card> cards;
+        for (size_t i = 2; i < matches.size(); i++) {
+            if (!matches[i].str().empty()) {
+                cards.emplace_back(matches[i].str());
+            }
+        }
+        return {std::stoi(matches[1].str()), cards};
+    }
+    else
+        throw std::runtime_error("invalid TRICK: " + trick);
+}
+
 // OTHER FUNCTIONS
 
 void process_hand (SendData &send_data, const int &pos, std::vector <Card> &hand) {
     if (to_pl[pos] == -1)
         throw std::runtime_error("initialising eventfd");
-    std::cerr << "Processing " << pos << '\n';
     pollfd fds[2];
     fds[0] = {.fd = to_pl[pos], .events = POLLIN, .revents = 0};
     fds[1] = {.fd = send_data.get_fd(), .events = POLLIN, .revents = 0};
@@ -103,6 +161,7 @@ void process_hand (SendData &send_data, const int &pos, std::vector <Card> &hand
 
 void wait_for_turn (int pos, int client_fd) {
     pollfd fds[2];
+    bool waiting_for_unpause = false;
     while (true) {
         fds[0] = {.fd = to_pl[pos], .events = POLLIN, .revents = 0};
         fds[1] = {.fd = client_fd, .events = POLLIN, .revents = 0};
@@ -112,10 +171,12 @@ void wait_for_turn (int pos, int client_fd) {
             throw std::runtime_error("got from client");
         // else we got a message on event_fd
         decrement_event_fd(to_pl[pos]);
-        if (!game_paused)
-            return;
+        if (game_paused)
+            waiting_for_unpause = true;
+        else if (waiting_for_unpause)
+            waiting_for_unpause = false;
         else
-            decrement_event_fd(to_pl[pos]); // wait for unpause
+            return;
     }
 }
 
@@ -139,7 +200,7 @@ void handle_player(
     setsockopt(client_fd, SOL_SOCKET, SO_SNDTIMEO, &to, sizeof to);
     char seat;
     int pos = 0;
-    bool connected = false;
+    bool connected = false, myturn = (game.get_pos() == pos);
     SendData send_data(client_fd, server_address, client_address);
     try {
         seat = get_IAM(send_data);
@@ -158,11 +219,12 @@ void handle_player(
             int trick_no = game.get_trick_no();
             while (trick_no <= 13) {
                 wait_for_turn(pos, client_fd);
+                myturn = true;
                 const auto &trick = game.get_trick(trick_no);
                 send_TRICK(send_data, trick_no, trick);
                 while (true) {
                     try {
-                        auto [no, v] = get_TRICK<false>(send_data); // TODO: beware of disconnects
+                        auto [no, v] = get_TRICK(send_data, pos, timeout * 1000);
                         if (v.size() != 1)
                             throw std::runtime_error("Incorrect answer to TRICK (cards no. >1)");
                         if (no != trick_no || incorrect_color(hand, trick, v[0]) || std::erase(hand, v[0]) == 0) {
@@ -179,6 +241,7 @@ void handle_player(
                             throw e;
                     }
                 }
+                myturn = false;
                 if (trick.size() == 4)
                     increment_event_fd(pl_to_gm);
                 else
@@ -196,6 +259,8 @@ void handle_player(
         error(e.what());
         if (connected)
             active.disconnect(pos, pl_to_gm);
+        if (myturn)
+            increment_event_fd(to_pl[pos]);
         close(client_fd);
         send_data.append_to_log(log);
         return;
@@ -214,7 +279,6 @@ void game_master(std::ifstream &desc, const int &game_over_fd) {
     while (get_deal(desc, current_deal, starting_client)) {
         active.wait_for_four();
         game_paused = false;
-        std::cerr << "four\n";
         clear_event_fd(pl_to_gm);
         for (const auto &fd: to_pl)
             increment_event_fd(fd); // let players know game has started
@@ -229,13 +293,14 @@ void game_master(std::ifstream &desc, const int &game_over_fd) {
                         increment_event_fd(fd); // let players know trick is over
                     break;
                 }
-                else { // TODO: nie działa
+                else {
                     std::cerr << "Paused\n";
                     game_paused = true;
                     for (const int &fd: to_pl)
                         increment_event_fd(fd); // game paused
                     active.wait_for_four();
                     game_paused = false;
+                    clear_event_fd(pl_to_gm);
                     for (const int &fd: to_pl)
                         increment_event_fd(fd); // let players know game is back on
                 }

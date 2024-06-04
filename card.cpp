@@ -62,12 +62,6 @@ Card::Card(std::string desc) {
     value = get_value(desc);
 }
 
-/*std::strong_ordering Card::operator<=>(const Card &other) const {
-    if (suit != other.suit)
-        return std::strong_ordering::greater;
-    return value <=> other.value;
-}*/
-
 std::string Card::to_string() const {
     return get_from_value(value) + get_from_suit(suit);
 }
@@ -79,14 +73,3 @@ bool Card::operator<(const Card &other) const {
 Suit Card::get_suit() const noexcept {
     return suit;
 }
-
-/*// any in range [13, 81] should work - we need hash to be unique and in range of uint8_t
-constexpr uint8_t hash_const = 20;
-
-uint8_t Card::hash() const {
-    return std::to_underlying(suit) * hash_const + std::to_underlying(value);
-}
-
-Card::Card(const uint8_t &hash) :
-    value(static_cast<Value>(hash % hash_const)),
-    suit(static_cast<Suit>(hash / hash_const)) {}*/

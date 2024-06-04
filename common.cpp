@@ -4,6 +4,7 @@
 #include <iostream>
 #include <mutex>
 #include <regex>
+#include <poll.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
 
@@ -22,6 +23,7 @@ ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
     char c{}, prev;
     ssize_t nread;
     msghdr tmp{};
+    auto now = std::chrono::system_clock::now(); // backup option
     do {
         static char control[1024];
         iovec a = {.iov_base = &c, .iov_len = 1};
@@ -34,13 +36,24 @@ ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
             return nread; // error
         ans += c;
         if (max_length-- == 0) {
-            timespec t = handle_time(&tmp);
+            auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
+            auto sec = sec_point.time_since_epoch().count();
+            auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
+                              - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
+            auto nsec = nsec_point.count();
+            timespec t = {.tv_sec = sec, .tv_nsec = nsec};
             ans += "\r\n";
             send_data.log_message(ans.c_str(), t, false);
             return -1;
         }
     } while (c != '\n' && prev != '\r');
-    timespec t = handle_time(&tmp);
+    //timespec t = handle_time(&tmp);
+    auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    auto sec = sec_point.time_since_epoch().count();
+    auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
+                      - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
+    auto nsec = nsec_point.count();
+    timespec t = {.tv_sec = sec, .tv_nsec = nsec};
     send_data.log_message(ans.c_str(), t, false);
     return 1;
 }
@@ -56,9 +69,10 @@ ssize_t writen(SendData &send_data, const void *vptr, size_t n){
     nleft = n;
     timespec t{};
     while (nleft > 0) {
+        auto now = std::chrono::system_clock::now(); // backup option
         if ((nwritten = write(send_data.get_fd(), ptr, nleft)) <= 0)
             return nwritten;  // error
-        msghdr tmp{};
+        /*msghdr tmp{};
         static char control[1024];
         static char msg[1024];
         iovec a = {.iov_base = msg, .iov_len = sizeof msg};
@@ -66,10 +80,46 @@ ssize_t writen(SendData &send_data, const void *vptr, size_t n){
         tmp.msg_iovlen = 1;
         tmp.msg_control = control;
         tmp.msg_controllen = sizeof control;
-        static ssize_t nread;
-        if ((nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE)) <= 0)
-            return nread;
-        t = handle_time(&tmp);
+        static ssize_t nread;*/
+        bool got_timestamp = false;
+        // FIXME: usunąć całkiem albo przywrócić
+        /*for (int i = 0; i < 10; i++) { // main check
+            nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE);
+            if (nread <= 0) {
+                if (nread < 0 && errno == EAGAIN)
+                    continue;
+                else
+                    return nread;
+            }
+            else {
+                //got_timestamp = true;
+                t = handle_time(&tmp);
+                break;
+            }
+        }*/
+        if (!got_timestamp) {
+            //std::cerr << "Opcja awaryjna\n";
+            auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
+            auto sec = sec_point.time_since_epoch().count();
+            auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
+                    - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
+            auto nsec = nsec_point.count();
+            t = {.tv_sec = sec, .tv_nsec = nsec};
+        }
+        /*do {
+            std::cerr << "Reading\n";
+            nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE);
+            if (nread <= 0) {
+                if (nread < 0 && errno == EAGAIN) {
+                    t = {.tv_sec = 0, .tv_nsec = 0};
+                    break;
+                }
+                //continue; TODO TMP
+                else
+                    return nread;
+            }
+        } while (nread <= 0);*/
+        //t = handle_time(&tmp);
 
         nleft -= nwritten;
         ptr += nwritten;
@@ -89,8 +139,8 @@ std::string get_ip(const sockaddr_storage &address) {
     else {
         auto *addr = (sockaddr_in6 *) &address;
         if (IN6_IS_ADDR_V4MAPPED(&addr->sin6_addr)) { // IPv4
-            auto *addr_4 = (sockaddr_in *) &address;
-            ss << inet_ntoa(addr_4->sin_addr);
+            in_addr tmp = {.s_addr = addr->sin6_addr.s6_addr32[3]};
+            ss << inet_ntoa(tmp);
         } else { // IPv6
             char ip[INET6_ADDRSTRLEN];
             ss << inet_ntop(AF_INET6, &(addr->sin6_addr), ip, INET6_ADDRSTRLEN);
@@ -135,39 +185,14 @@ constexpr std::string multiply_string(const std::string &input, int times) {
     return ans;
 }
 
-void print_list(const std::vector<Card> &cards) {
-    size_t len = cards.size() - 1;
-    for (size_t i = 0; i < len; i++)
-        std::cout << cards[i].to_string() << ", ";
-    std::cout << cards[len].to_string() << std::endl;
-}
-
-std::vector<Card> get_DEAL(SendData &send_data) {
-    static const std::regex re("DEAL([1-7])([NESW])" +
-        multiply_string(CARD_REGEX, 13) + "\r\n");
-    std::string deal;
-    std::smatch matches;
-    while (true) {
-        // TODO: magic const
-        if (get_line(send_data, 100, deal) <= 0)
-            throw std::runtime_error("couldn't receive DEAL");
-        if (std::regex_match(deal, matches, re)) {
-            std::cout << "New deal: " << matches[1].str() << ": staring place "
-                      << matches[2].str() << ", your cards: ";
-            std::vector<Card> cards;
-            for (size_t i = 3; i < matches.size(); i++) {
-                cards.emplace_back(matches[i].str());
-                std::cout << matches[i].str();
-                if (i < matches.size() - 1)
-                    std::cout << ", ";
-                else
-                    std::cout << std::endl;
-            }
-            return cards;
-        }
-        else
-            std::cerr << "Wrong message from server ignored\n";
-    }
+[[nodiscard]] std::string print_list(const std::vector<Card> &cards) {
+    ssize_t len = static_cast<ssize_t>(cards.size()) - 1;
+    std::stringstream ss;
+    for (ssize_t i = 0; i < len; i++)
+        ss << cards[i].to_string() << ", ";
+    if (len >= 0)
+        ss << cards[len].to_string();
+    return ss.str();
 }
 
 char get_IAM(SendData &send_data) {
@@ -187,7 +212,7 @@ void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick) {
         throw std::runtime_error("sending TRICK");
 }
 
-template <bool client>
+/*template <bool client>
 std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed) {
     static const std::regex re("TRICK([1-9]|1[0-3])" +
         multiply_string(CARD_REGEX + '?', 4) + "\r\n");
@@ -229,3 +254,39 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allo
 // explicit initialisation
 template std::pair<int, std::vector<Card>> get_TRICK<true>(SendData &send_data, bool taken_allowed);
 template std::pair<int, std::vector<Card>> get_TRICK<false>(SendData &send_data, bool taken_allowed);
+ */
+
+void increment_event_fd(int event_fd, uint64_t val) {
+    if (event_fd == 7)
+        std::cerr << event_fd << '\n';
+    if (event_fd == -1)
+        throw std::runtime_error("initialising eventfd");
+    if (write(event_fd, &val, sizeof val) != sizeof val)
+        throw std::runtime_error("incrementing eventfd");
+}
+
+void decrement_event_fd(int event_fd, uint64_t times) {
+    if (event_fd == 7)
+        std::cerr << -event_fd << '\n';
+    if (event_fd == -1)
+        throw std::runtime_error("initialising eventfd");
+    uint64_t u;
+    while (times > 0) {
+        if (read(event_fd, &u, sizeof u) != sizeof u)
+            throw std::runtime_error("decrementing eventfd");
+        times -= u;
+    }
+}
+
+void clear_event_fd(int event_fd) {
+    if (event_fd == -1)
+        throw std::runtime_error("initialising eventfd");
+    pollfd pfd = {.fd = event_fd, .events = POLLIN, .revents = 0};
+    while (true) {
+        poll(&pfd, 1, 0);
+        if (pfd.revents & POLLIN)
+            decrement_event_fd(event_fd);
+        else
+            return;
+    }
+}
