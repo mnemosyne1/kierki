@@ -10,23 +10,14 @@
 
 #include "common.h"
 
-constexpr timespec handle_time(struct msghdr* msg) {
-    cmsghdr* cmsg = CMSG_FIRSTHDR(msg);
-    while (cmsg != nullptr && cmsg->cmsg_level != SOL_SOCKET)
-        cmsg = CMSG_NXTHDR(msg,cmsg);
-    // assert (cmsg->cmsg_type == SO_TIMESTAMPNS || cmsg->cmsg_type == SO_TIMESTAMPING)
-    auto *ts = (timespec *) CMSG_DATA(cmsg);
-    return ts[0];
-}
-
 ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
-    char c{}, prev;
+    char c = 0, prev = 0;
     ssize_t nread;
     auto now = std::chrono::system_clock::now();
     do {
         now = std::chrono::system_clock::now();
         prev = c;
-        if ((nread = read(send_data.get_fd(), &c, 1) <= 0))
+        if ((nread = read(send_data.get_fd(), &c, 1)) <= 0)
             return nread; // error
         ans += c;
         if (max_length-- == 0) {
@@ -121,6 +112,7 @@ void SendData::log_message(const char *msg, const timespec &t, bool send) {
         std::put_time(std::localtime(&t.tv_sec), "%Y-%m-%dT%H:%M:%S") << '.' <<
         std::setw(3) << std::setfill('0') << t.tv_nsec / 1'000'000 << "] " << msg;
     log.emplace_back(t, ss.str());
+    std::cerr << ss.str();
 }
 
 static std::mutex mutex;
@@ -164,53 +156,9 @@ void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick) {
         throw std::runtime_error("sending TRICK");
 }
 
-/*template <bool client>
-std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed) {
-    static const std::regex re("TRICK([1-9]|1[0-3])" +
-        multiply_string(CARD_REGEX + '?', 4) + "\r\n");
-    // TODO: DUPLICATE? (same general idea, different details)
-    std::string trick;
-    std::smatch matches;
-    // TODO: magic const
-    if (get_line(send_data, 100, trick) <= 0) {
-        if (errno == EAGAIN)
-            throw std::runtime_error(timeout_trick_msg);
-        else
-            throw std::runtime_error("couldn't receive TRICK");
-    }
-    if (std::regex_match(trick, matches, re)) {
-        if constexpr (client)
-            std::cout << "Trick: (" << matches[1].str() << ") ";
-        std::vector<Card> cards;
-        for (size_t i = 2; i < matches.size(); i++) {
-            if (!matches[i].str().empty()) {
-                cards.emplace_back(matches[i].str());
-                if constexpr (client) {
-                    std::cout << matches[i].str();
-                    if (i < matches.size() - 1 && !matches[i + 1].str().empty())
-                        std::cout << ", ";
-                    //else
-                    //    std::cout << std::endl;
-                }
-            }
-        }
-        return {std::stoi(matches[1].str()), cards};
-    }
-    else if (taken_allowed) {
-        throw std::runtime_error("TAKEN (not implemented yet)"); // FIXME
-    }
-    else
-        throw std::runtime_error("invalid TRICK: " + trick);
-}
-
-// explicit initialisation
-template std::pair<int, std::vector<Card>> get_TRICK<true>(SendData &send_data, bool taken_allowed);
-template std::pair<int, std::vector<Card>> get_TRICK<false>(SendData &send_data, bool taken_allowed);
- */
-
 void increment_event_fd(int event_fd, uint64_t val) {
-    if (event_fd == 7)
-        std::cerr << event_fd << '\n';
+    //if (event_fd == 5)
+    //    std::cerr << event_fd << '\n';
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
     if (write(event_fd, &val, sizeof val) != sizeof val)
@@ -218,8 +166,8 @@ void increment_event_fd(int event_fd, uint64_t val) {
 }
 
 void decrement_event_fd(int event_fd, uint64_t times) {
-    if (event_fd == 7)
-        std::cerr << -event_fd << '\n';
+    //if (event_fd == 5)
+    //    std::cerr << -event_fd << '\n';
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
     uint64_t u;

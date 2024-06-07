@@ -73,10 +73,8 @@ std::pair<int, std::string> get_message(SendData &send_data) {
     std::pair<int, std::string> ans{INCORRECT, ""};
     // TODO: magic const
     auto tmp = get_line(send_data, 100, ans.second);
-    if (tmp <= 0) {
-        std::cerr << tmp << ' ' << errno << '\n';
+    if (tmp <= 0)
         throw std::runtime_error("couldn't receive message");
-    }
     for (int i = 0; i < REGEXES_NO; i++) {
         if (std::regex_match(ans.second, regexes[i])) {
             ans.first = i;

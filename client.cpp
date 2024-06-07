@@ -147,11 +147,9 @@ int main(int argc, char *argv[]) {
         send_IAM(send_data, config.seat);
         while (true) {
             auto msg = get_message(send_data);
-            std::cerr << msg.first << ' ' << msg.second;
-            if (msg.first == INCORRECT) {
-                std::cerr << "Something went wrong\n";
+            std::cerr << msg.first << ' ' << msg.second;// << '\n';
+            if (msg.first == INCORRECT)
                 continue;
-            }
             last_msg.update(msg);
             std::smatch matches;
             std::regex_match(msg.second, matches, regexes[msg.first]);
@@ -217,7 +215,6 @@ int main(int argc, char *argv[]) {
                     }
                     break;
             }
-            std::cerr << "After dealing with msg\n";
             if (!config.auto_player)
                 std::cout << ss.str() << std::endl;
             //else
