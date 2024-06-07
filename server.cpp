@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <csignal>
 #include <fstream>
 #include <poll.h>
 #include <thread>
@@ -9,8 +10,6 @@
 #include "parser.h"
 #include "server_communication.h"
 #include "server_players.h"
-#include <linux/net_tstamp.h>
-#include <csignal>
 
 int main(int argc, char *argv[]) {
     signal(SIGPIPE, SIG_IGN);
@@ -47,15 +46,6 @@ int main(int argc, char *argv[]) {
             addr_size = (socklen_t){sizeof server_address};
             if (getsockname(client_fd, (sockaddr *) &server_address, &addr_size)) {
                 error("getsockname");
-                close(client_fd);
-                continue;
-            }
-            int enable = SOF_TIMESTAMPING_TX_SOFTWARE |
-                         SOF_TIMESTAMPING_RX_SOFTWARE |
-                         SOF_TIMESTAMPING_SOFTWARE;
-            if (setsockopt(client_fd, SOL_SOCKET, SO_TIMESTAMPING,
-                           &enable, sizeof(int)) < 0) {
-                error("setsockopt");
                 close(client_fd);
                 continue;
             }

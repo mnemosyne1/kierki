@@ -22,17 +22,11 @@ constexpr timespec handle_time(struct msghdr* msg) {
 ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
     char c{}, prev;
     ssize_t nread;
-    msghdr tmp{};
-    auto now = std::chrono::system_clock::now(); // backup option
+    auto now = std::chrono::system_clock::now();
     do {
-        static char control[1024];
-        iovec a = {.iov_base = &c, .iov_len = 1};
-        tmp.msg_iov = &a;
-        tmp.msg_iovlen = 1;
-        tmp.msg_control = control;
-        tmp.msg_controllen = sizeof control;
+        now = std::chrono::system_clock::now();
         prev = c;
-        if ((nread = recvmsg(send_data.get_fd(), &tmp, 0)) <= 0)
+        if ((nread = read(send_data.get_fd(), &c, 1) <= 0))
             return nread; // error
         ans += c;
         if (max_length-- == 0) {
@@ -47,7 +41,6 @@ ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
             return -1;
         }
     } while (c != '\n' && prev != '\r');
-    //timespec t = handle_time(&tmp);
     auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
     auto sec = sec_point.time_since_epoch().count();
     auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
@@ -68,62 +61,21 @@ ssize_t writen(SendData &send_data, const void *vptr, size_t n){
     ptr = (const char*) vptr;  // Can't do pointer arithmetic on void*.
     nleft = n;
     timespec t{};
+    auto now = std::chrono::system_clock::now();
     while (nleft > 0) {
-        auto now = std::chrono::system_clock::now(); // backup option
+        now = std::chrono::system_clock::now();
         if ((nwritten = write(send_data.get_fd(), ptr, nleft)) <= 0)
             return nwritten;  // error
-        /*msghdr tmp{};
-        static char control[1024];
-        static char msg[1024];
-        iovec a = {.iov_base = msg, .iov_len = sizeof msg};
-        tmp.msg_iov = &a;
-        tmp.msg_iovlen = 1;
-        tmp.msg_control = control;
-        tmp.msg_controllen = sizeof control;
-        static ssize_t nread;*/
-        bool got_timestamp = false;
-        // FIXME: usunąć całkiem albo przywrócić
-        /*for (int i = 0; i < 10; i++) { // main check
-            nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE);
-            if (nread <= 0) {
-                if (nread < 0 && errno == EAGAIN)
-                    continue;
-                else
-                    return nread;
-            }
-            else {
-                //got_timestamp = true;
-                t = handle_time(&tmp);
-                break;
-            }
-        }*/
-        if (!got_timestamp) {
-            //std::cerr << "Opcja awaryjna\n";
-            auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
-            auto sec = sec_point.time_since_epoch().count();
-            auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
-                    - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
-            auto nsec = nsec_point.count();
-            t = {.tv_sec = sec, .tv_nsec = nsec};
-        }
-        /*do {
-            std::cerr << "Reading\n";
-            nread = recvmsg(send_data.get_fd(), &tmp, MSG_ERRQUEUE);
-            if (nread <= 0) {
-                if (nread < 0 && errno == EAGAIN) {
-                    t = {.tv_sec = 0, .tv_nsec = 0};
-                    break;
-                }
-                //continue; TODO TMP
-                else
-                    return nread;
-            }
-        } while (nread <= 0);*/
-        //t = handle_time(&tmp);
 
         nleft -= nwritten;
         ptr += nwritten;
     }
+    auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
+    auto sec = sec_point.time_since_epoch().count();
+    auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
+                      - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
+    auto nsec = nsec_point.count();
+    t = {.tv_sec = sec, .tv_nsec = nsec};
     std::string msg(static_cast<const char *>(vptr), n);
     send_data.log_message(msg.c_str(), t, true);
     return n;

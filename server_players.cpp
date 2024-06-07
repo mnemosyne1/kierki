@@ -98,7 +98,6 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int ti
             throw std::runtime_error(timeout_trick_msg);
         if (fds[0].revents & POLLIN) {
             decrement_event_fd(to_pl[pos]);
-            std::cerr << "GP WU" << game_paused << ' ' << waiting_for_unpause << '\n';
             if (game_paused) {
                 waiting_for_unpause = true;
                 continue;
@@ -107,10 +106,8 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int ti
                 waiting_for_unpause = false;
         }
         // client disconnected
-        if (fds[1].revents & POLLRDHUP) {
-            std::cerr << "Client disconnected\n";
-            throw std::runtime_error("couldn't receive TRICK");
-        }
+        if (fds[1].revents & POLLRDHUP)
+            throw std::runtime_error("client disconnected");
         // on client_fd we'd get trick
         if (fds[1].revents & POLLIN)
             break;
