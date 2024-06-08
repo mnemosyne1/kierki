@@ -11,16 +11,16 @@
 #include "common.h"
 
 ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
-    char c = 0, prev = 0;
+    char c;
     ssize_t nread;
     auto now = std::chrono::system_clock::now();
     do {
         now = std::chrono::system_clock::now();
-        prev = c;
         if ((nread = read(send_data.get_fd(), &c, 1)) <= 0)
             return nread; // error
-        ans += c;
-        if (max_length-- == 0) {
+        if (c != 0)
+            ans += c;
+        if (max_length-- == 0 || c == 0) {
             auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
             auto sec = sec_point.time_since_epoch().count();
             auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
@@ -31,15 +31,29 @@ ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
             send_data.log_message(ans.c_str(), t, false);
             return -1;
         }
-    } while (c != '\n' && prev != '\r');
+    } while (c != 0 && !std::isspace(c));
+    if (c == '\r') {
+        now = std::chrono::system_clock::now();
+        if ((nread = read(send_data.get_fd(), &c, 1)) <= 0)
+            return nread; // error
+        if (c != 0)
+            ans += c;
+    }
     auto sec_point = std::chrono::time_point_cast<std::chrono::seconds>(now);
     auto sec = sec_point.time_since_epoch().count();
     auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
                       - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
     auto nsec = nsec_point.count();
     timespec t = {.tv_sec = sec, .tv_nsec = nsec};
-    send_data.log_message(ans.c_str(), t, false);
-    return 1;
+    if (ans.ends_with("\r\n")) {
+        send_data.log_message(ans.c_str(), t, false);
+        return 1;
+    }
+    else {
+        ans += "\r\n";
+        send_data.log_message(ans.c_str(), t, false);
+        return -1;
+    }
 }
 
 // Following function comes from Stevens' "UNIX Network Programming" book...
@@ -157,8 +171,6 @@ void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick) {
 }
 
 void increment_event_fd(int event_fd, uint64_t val) {
-    //if (event_fd == 5)
-    //    std::cerr << event_fd << '\n';
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
     if (write(event_fd, &val, sizeof val) != sizeof val)
@@ -166,8 +178,6 @@ void increment_event_fd(int event_fd, uint64_t val) {
 }
 
 void decrement_event_fd(int event_fd, uint64_t times) {
-    //if (event_fd == 5)
-    //    std::cerr << -event_fd << '\n';
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
     uint64_t u;

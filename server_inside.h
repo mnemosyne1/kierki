@@ -144,7 +144,7 @@ public:
             }
             if (current_deal == 1 || current_deal == 7)
                 points_deal[player]++; // point for each trick
-            if (current_deal >= 6 && (current_trick == 7 || current_trick == 13))
+            if (current_deal >= 6 && (current_trick == 6 || current_trick == 12))
                 points_deal[player] += 10; // points for 7th and 13th trick
             current_trick++;
             if (current_trick == 13) // end of deal

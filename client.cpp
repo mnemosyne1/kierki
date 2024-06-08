@@ -47,7 +47,7 @@ private:
     std::mutex mutex{};
 public:
     DealState() = default;
-    std::vector<std::vector<Card>> get_tricks() noexcept {
+    const std::vector<std::vector<Card>> &get_tricks() noexcept {
         std::unique_lock<std::mutex> lock(mutex);
         return tricks;
     }
@@ -109,7 +109,7 @@ void cin_worker(SendData &send_data) {
             std::cout << print_list(game.get_hand()) << std::endl;
         }
         else if (request == "tricks") {
-            auto t = game.get_tricks();
+            const auto &t = game.get_tricks();
             for (const auto &trick: t)
                 std::cout << print_list(trick) << std::endl;
         }
@@ -134,6 +134,7 @@ int main(int argc, char *argv[]) {
     client_config config = get_client_config(argc, argv);
     sockaddr_storage server_address{}, client_address{};
     int socket_fd = socket_init(config.host, config.port, config.ipv, &server_address);
+    std::cerr << socket_fd << '\n';
     auto addr_size = static_cast<socklen_t>(sizeof client_address);
     if (getsockname(socket_fd, (sockaddr *) &client_address, &addr_size)) {
         close(socket_fd);
@@ -147,7 +148,7 @@ int main(int argc, char *argv[]) {
         send_IAM(send_data, config.seat);
         while (true) {
             auto msg = get_message(send_data);
-            std::cerr << msg.first << ' ' << msg.second;// << '\n';
+            //std::cerr << msg.first << ' ' << msg.second;// << '\n';
             if (msg.first == INCORRECT)
                 continue;
             last_msg.update(msg);
@@ -217,8 +218,6 @@ int main(int argc, char *argv[]) {
             }
             if (!config.auto_player)
                 std::cout << ss.str() << std::endl;
-            //else
-            //    std::cerr << ss.str() << std::endl;
         }
     }
     catch (const std::runtime_error &e) {
@@ -232,6 +231,7 @@ int main(int argc, char *argv[]) {
         else
             cinner.join();
         close(socket_fd);
+        close(game_over);
         if (!last_msg.may_end()) {
             if (!std::string(e.what()).empty())
                 error(e.what());
