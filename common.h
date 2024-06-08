@@ -3,14 +3,18 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <regex>
 #include <vector>
 #include <sys/eventfd.h>
 #include <sys/socket.h>
 #include "card.h"
 #include "err.h"
 
+// CLASSES
+
 typedef std::pair<timespec, std::string> Log_message;
 typedef std::vector<Log_message> Log;
+
 class SendData {
 private:
     const int fd;
@@ -28,7 +32,7 @@ public:
     void append_to_log(Log &general_log);
 };
 
-ssize_t writen(SendData &send_data, const void *vptr, size_t n);
+// SEAT-INDEX MAPPING
 
 constexpr int get_index_from_seat(char seat) {
     switch (seat) {
@@ -60,17 +64,50 @@ constexpr char get_seat_from_index(int index) {
     }
 }
 
-ssize_t get_line(SendData &send_data, size_t max_length, std::string &ans);
-[[nodiscard]] std::string print_list(const std::vector<Card> &cards);
+// COMMUNICATION
+
+ssize_t writen(SendData &send_data, const void *vptr, size_t n);
+ssize_t get_line(SendData &send_data, std::string &ans, size_t max_length = 100);
 void increment_event_fd(int event_fd, uint64_t val = 1);
 void decrement_event_fd(int event_fd, uint64_t times = 1);
 void clear_event_fd(int event_fd);
+const std::string CARD_REGEX("((?:[1-9]|10|Q|J|K|A)(?:[CDHS]))");
+constexpr std::string multiply_string(const std::string &input, int times) {
+    std::string ans;
+    while (times--)
+        ans += input;
+    return ans;
+}
 
 // COMMUNICATION
+
 void send_TRICK(SendData &send_data, int no, const std::vector<Card> &trick);
 char get_IAM(SendData &send_data);
-//template <bool client>
-//std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, bool taken_allowed=false);
 const std::string timeout_trick_msg = "timeout on receiving TRICK";
+
+// REGEXES
+
+const std::regex BUSY_REGEX("BUSY" + multiply_string("([NESW])?", 4) + "\r\n");
+const std::regex DEAL_REGEX ("DEAL([1-7])([NESW])" + multiply_string(CARD_REGEX, 13) + "\r\n");
+const std::regex TRICK_REGEX ("TRICK([1-9]|1[0-3])" +
+                              multiply_string(CARD_REGEX + '?', 4) + "\r\n");
+const std::regex WRONG_REGEX ("WRONG([1-9|1[0-3])\r\n");
+const std::regex TAKEN_REGEX ("TAKEN([1-9]|1[0-3])" +
+                              multiply_string(CARD_REGEX, 4) + "([NESW])\r\n");
+const std::regex SCORE_REGEX("SCORE" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
+const std::regex TOTAL_REGEX("TOTAL" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
+constexpr int BUSY = 0;
+constexpr int DEAL = 1;
+constexpr int TRICK = 2;
+constexpr int WRONG = 3;
+constexpr int TAKEN = 4;
+constexpr int SCORE = 5;
+constexpr int TOTAL = 6;
+constexpr int INCORRECT = 7;
+constexpr int REGEXES_NO = 7;
+const std::regex regexes[REGEXES_NO] = {BUSY_REGEX, DEAL_REGEX,
+                                        TRICK_REGEX, WRONG_REGEX,
+                                        TAKEN_REGEX, SCORE_REGEX,
+                                        TOTAL_REGEX};
 
 #endif

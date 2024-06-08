@@ -1,5 +1,5 @@
 CXX     = g++
-CXXFLAGS = -Wall -Wextra -O2 -std=c++2b -g
+CXXFLAGS = -Wall -Wextra -O2 -std=c++2b
 
 .PHONY: all clean
 
@@ -13,7 +13,7 @@ $(TARGET1): $(TARGET1).o err.o card.o common.o
 $(TARGET2): $(TARGET2).o err.o card.o common.o server_players.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-kierki-klient.o: client.cpp parser.h client_communication.h common.h
+kierki-klient.o: client.cpp parser.h common.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 kierki-serwer.o: server.cpp parser.h server_communication.h server_players.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@

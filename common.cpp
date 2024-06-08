@@ -3,14 +3,13 @@
 #include <iomanip>
 #include <iostream>
 #include <mutex>
-#include <regex>
 #include <poll.h>
 #include <arpa/inet.h>
 #include <sys/types.h>
 
 #include "common.h"
 
-ssize_t get_line (SendData &send_data, size_t max_length, std::string &ans) {
+ssize_t get_line (SendData &send_data, std::string &ans, size_t max_length) {
     char c;
     ssize_t nread;
     auto now = std::chrono::system_clock::now();
@@ -126,7 +125,7 @@ void SendData::log_message(const char *msg, const timespec &t, bool send) {
         std::put_time(std::localtime(&t.tv_sec), "%Y-%m-%dT%H:%M:%S") << '.' <<
         std::setw(3) << std::setfill('0') << t.tv_nsec / 1'000'000 << "] " << msg;
     log.emplace_back(t, ss.str());
-    std::cerr << ss.str();
+    //std::cerr << ss.str();
 }
 
 static std::mutex mutex;
@@ -135,29 +134,11 @@ void SendData::append_to_log(Log &general_log) {
     general_log.insert(general_log.end(), log.begin(), log.end());
 }
 
-const std::string CARD_REGEX("((?:[1-9]|10|Q|J|K|A)(?:[CDHS]))");
-constexpr std::string multiply_string(const std::string &input, int times) {
-    std::string ans;
-    while (times--)
-        ans += input;
-    return ans;
-}
-
-[[nodiscard]] std::string print_list(const std::vector<Card> &cards) {
-    ssize_t len = static_cast<ssize_t>(cards.size()) - 1;
-    std::stringstream ss;
-    for (ssize_t i = 0; i < len; i++)
-        ss << cards[i].to_string() << ", ";
-    if (len >= 0)
-        ss << cards[len].to_string();
-    return ss.str();
-}
-
 char get_IAM(SendData &send_data) {
     static constexpr ssize_t IAM_SIZE = 6;
     static const std::regex IAM_REGEX("IAM[NESW]\r\n");
     std::string msg;
-    if (get_line(send_data, IAM_SIZE, msg) < 0)
+    if (get_line(send_data, msg, IAM_SIZE) < 0)
         throw std::runtime_error("receiving IAM");
     if (!std::regex_match(msg, IAM_REGEX))
         throw std::runtime_error("Invalid IAM message");

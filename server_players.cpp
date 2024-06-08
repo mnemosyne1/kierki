@@ -20,15 +20,6 @@ static GameState game;
 // incremented when: (a) game is paused (b) game is unpaused (c) it's player's turn
 int to_pl[4][2];
 const int pl_to_gm = eventfd(0, EFD_SEMAPHORE);
-const std::string CARD_REGEX("((?:[1-9]|10|Q|J|K|A)(?:[CDHS]))");
-constexpr std::string multiply_string(const std::string &input, int times) {
-    std::string ans;
-    while (times--)
-        ans += input;
-    return ans;
-}
-const std::regex REGEX_TRICK("TRICK([1-9]|1[0-3])" +
-                           multiply_string(CARD_REGEX + '?', 4) + "\r\n");
 
 // defines of pipe messages
 constexpr char PAUSE = 'P';
@@ -108,8 +99,6 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int ti
     while (true) {
         fds[0] = {.fd = to_pl[pos][0], .events = POLLIN, .revents = 0};
         fds[1] = {.fd = send_data.get_fd(), .events = static_cast<short>(waiting_for_unpause ? POLLRDHUP : POLLIN), .revents = 0};
-        //if (!waiting_for_unpause)
-        //    fds[1].events |= POLLIN;
         if (poll(fds, 2, waiting_for_unpause ? -1 : timeout) == 0) // timeout
             throw std::runtime_error(timeout_trick_msg);
         if (fds[0].revents & POLLIN) {
@@ -136,8 +125,7 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int ti
         if (fds[1].revents & POLLIN)
             break;
     }
-    // FIXME: should poll in get_line ig
-    if (get_line(send_data, 100, trick) <= 0) {
+    if (get_line(send_data, trick) <= 0) { // known issue: doesn't check if game is paused here
         if (errno == EAGAIN)
             throw std::runtime_error(timeout_trick_msg);
         else {
@@ -145,7 +133,7 @@ std::pair<int, std::vector<Card>> get_TRICK(SendData &send_data, int pos, int ti
             throw std::runtime_error("couldn't receive TRICK");
         }
     }
-    if (std::regex_match(trick, matches, REGEX_TRICK)) {
+    if (std::regex_match(trick, matches, TRICK_REGEX)) {
         std::vector<Card> cards;
         for (size_t i = 2; i < matches.size(); i++) {
             if (!matches[i].str().empty()) {
@@ -232,8 +220,8 @@ char wait_for_turn (SendData send_data, int pos) {
                 write(to_pl[pos][1], &PAUSE, 1);
             }
             std::string msg;
-            ssize_t read_len = get_line(send_data, 100, msg);
-            if (read_len > 0 && std::regex_match(msg, REGEX_TRICK)) {
+            ssize_t read_len = get_line(send_data, msg);
+            if (read_len > 0 && std::regex_match(msg, TRICK_REGEX)) {
                 send_WRONG(send_data, game.get_trick_no());
                 continue;
             }

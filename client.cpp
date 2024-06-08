@@ -1,19 +1,23 @@
+#include <cstring>
 #include <iostream>
 #include <mutex>
 #include <thread>
 #include <utility>
+#include <regex>
 #include <sys/poll.h>
+#include <sys/socket.h>
+#include <netdb.h>
 
+#include "common.h"
 #include "err.h"
 #include "parser.h"
-#include "client_communication.h"
 
 class Message {
 private:
     int type{};
     std::string value{};
     std::mutex mutex{};
-    bool score_total = false;
+    bool score_total = false; // were the last 2 messages score and total (in any order)
 public:
     Message() = default;
     void update(const std::pair<int, std::string> &val) noexcept {
@@ -29,10 +33,6 @@ public:
     int get_type() noexcept {
         std::unique_lock<std::mutex> lock(mutex);
         return type;
-    }
-    std::string get_message() noexcept {
-        std::unique_lock<std::mutex> lock(mutex);
-        return value;
     }
     bool may_end() noexcept {
         std::unique_lock<std::mutex> lock(mutex);
@@ -87,12 +87,103 @@ public:
                 return c;
         return hand[0];
     }
-
 };
+
+// GLOBAL VARIABLES (+INTERTHREAD COMMUNICATION)
 
 static Message last_msg;
 static DealState game;
 static int game_over = eventfd(0, 0);
+
+[[nodiscard]] std::string print_list(const std::vector<Card> &cards) {
+    ssize_t len = static_cast<ssize_t>(cards.size()) - 1;
+    std::stringstream ss;
+    for (ssize_t i = 0; i < len; i++)
+        ss << cards[i].to_string() << ", ";
+    if (len >= 0)
+        ss << cards[len].to_string();
+    return ss.str();
+}
+
+// COMMUNICATION
+
+int socket_init(const std::string& host, const std::string &port,
+                const int &ipv, sockaddr_storage *server_address) {
+    addrinfo hints, *server_info;
+    memset(&hints, 0, sizeof(hints));
+    hints.ai_family = ipv;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    if (getaddrinfo(host.c_str(), port.c_str(), &hints, &server_info) != 0)
+        syserr("cannot get server info");
+    int socket_fd;
+    socket_fd = socket(server_info->ai_family,
+                       server_info->ai_socktype,
+                       server_info->ai_protocol);
+    if (socket_fd < 0)
+        syserr("cannot create a socket");
+    if (connect(socket_fd, server_info->ai_addr, server_info->ai_addrlen) == -1) {
+        close(socket_fd);
+        syserr("cannot connect to server");
+    }
+    memcpy(server_address, server_info->ai_addr, server_info->ai_addrlen);
+    freeaddrinfo(server_info);
+    return socket_fd;
+}
+
+void send_IAM(SendData &send_data, const char &seat) {
+    static constexpr ssize_t IAM_LEN = 6;
+    const char msg[] = {'I', 'A', 'M', seat, '\r', '\n'};
+    if (writen(send_data, msg, IAM_LEN) != IAM_LEN)
+        throw std::runtime_error("sending IAM");
+}
+
+// returns pair (type of message, message content)
+std::pair<int, std::string> get_message(SendData &send_data) {
+    std::pair<int, std::string> ans{INCORRECT, ""};
+    auto tmp = get_line(send_data, ans.second);
+    if (tmp <= 0)
+        throw std::runtime_error("couldn't receive message");
+    for (int i = 0; i < REGEXES_NO; i++) {
+        if (std::regex_match(ans.second, regexes[i])) {
+            ans.first = i;
+            return ans;
+        }
+    }
+    return ans;
+}
+
+std::vector<Card> process_card_message(std::stringstream &output,
+                                       const std::smatch &matches,
+                                       size_t first_card,
+                                       size_t last_card) {
+    std::vector<Card> cards;
+    for (size_t i = first_card; i < last_card && !matches[i].str().empty(); i++)
+        cards.emplace_back(matches[i]);
+    output << print_list(cards);
+    return cards;
+}
+
+void process_BUSY(std::stringstream &output, const std::smatch &matches) {
+    increment_event_fd(game_over);
+    output << "Place busy, list of busy places received: ";
+    for (size_t i = 1; i < matches.size() && !matches[i].str().empty(); i++) {
+        output << matches[i];
+        if (i < matches.size() - 1 && !matches[i + 1].str().empty())
+            output << ", ";
+    }
+    output << '.';
+}
+
+void process_score_message(std::stringstream &output, const std::smatch &matches) {
+    for (int i = 0; i < 4; i++) {
+        output << matches[1 + 2 * i] << " | " << matches[2 + 2 * i];
+        if (i < 3)
+            output << '\n';
+    }
+}
+
+// THREAD FUNCTION
 
 void cin_worker(SendData &send_data) {
     pollfd fds[2];
@@ -134,7 +225,6 @@ int main(int argc, char *argv[]) {
     client_config config = get_client_config(argc, argv);
     sockaddr_storage server_address{}, client_address{};
     int socket_fd = socket_init(config.host, config.port, config.ipv, &server_address);
-    std::cerr << socket_fd << '\n';
     auto addr_size = static_cast<socklen_t>(sizeof client_address);
     if (getsockname(socket_fd, (sockaddr *) &client_address, &addr_size)) {
         close(socket_fd);
@@ -148,7 +238,6 @@ int main(int argc, char *argv[]) {
         send_IAM(send_data, config.seat);
         while (true) {
             auto msg = get_message(send_data);
-            //std::cerr << msg.first << ' ' << msg.second;// << '\n';
             if (msg.first == INCORRECT)
                 continue;
             last_msg.update(msg);
@@ -158,31 +247,21 @@ int main(int argc, char *argv[]) {
             std::vector<Card> cards;
             switch (msg.first) {
                 case BUSY:
-                    increment_event_fd(game_over);
-                    ss << "Place busy, list of busy places received: ";
-                    for (size_t i = 1; i < matches.size() && !matches[i].str().empty(); i++) {
-                        ss << matches[i];
-                        if (i < matches.size() - 1 && !matches[i + 1].str().empty())
-                            ss << ", ";
-                    }
-                    ss << '.';
+                    process_BUSY(ss, matches);
                     if (!config.auto_player)
                         std::cout << ss.str() << std::endl;
                     throw std::runtime_error("");
                 case DEAL:
                     ss << "New deal: " << matches[1] << ": staring place "
                        << matches[2] << ", your cards: ";
-                    for (size_t i = 3; i < matches.size(); i++)
-                        cards.emplace_back(matches[i]);
-                    ss << print_list(cards) << '.';
+                    cards = process_card_message(ss, matches, 3, matches.size());
+                    ss << '.';
                     game.set_hand(cards);
                     break;
                 case TRICK:
                     ss << "Trick: (" << matches[1] << ") ";
-                    for (size_t i = 2; i < matches.size() && !matches[i].str().empty(); i++)
-                        cards.emplace_back(matches[i]);
-                    ss << print_list(cards) << "\nAvailable: "
-                       << print_list(game.get_hand());
+                    cards = process_card_message(ss, matches, 2, matches.size());
+                    ss << "\nAvailable: " << print_list(game.get_hand());
                     if (config.auto_player) {
                         Card c = game.get_playable(cards);
                         send_TRICK(send_data, game.get_trick(), std::vector<Card>{c});
@@ -194,26 +273,17 @@ int main(int argc, char *argv[]) {
                 case TAKEN:
                     ss << "A trick " << matches[1] << " is taken by "
                        << matches[matches.size() - 1] << ", cards ";
-                    for (size_t i = 2; i < matches.size() - 1; i++)
-                        cards.emplace_back(matches[i]);
+                    cards = process_card_message(ss, matches, 2, matches.size() - 1);
                     game.put_trick(cards, (matches[matches.size() - 1] == config.seat));
-                    ss << print_list(cards);
+                    ss << '.';
                     break;
                 case SCORE:
                     ss << "The scores are:\n";
-                    for (int i = 0; i < 4; i++) {
-                        ss << matches[1 + 2 * i] << " | " << matches[2 + 2 * i];
-                        if (i < 3)
-                            ss << '\n';
-                    }
+                    process_score_message(ss, matches);
                     break;
                 case TOTAL:
                     ss << "The total scores are:\n";
-                    for (int i = 0; i < 4; i++) {
-                        ss << matches[1 + 2 * i] << " | " << matches[2 + 2 * i];
-                        if (i < 3)
-                            ss << '\n';
-                    }
+                    process_score_message(ss, matches);
                     break;
             }
             if (!config.auto_player)
@@ -221,6 +291,7 @@ int main(int argc, char *argv[]) {
         }
     }
     catch (const std::runtime_error &e) {
+        // server disconnected or other error occured
         increment_event_fd(game_over);
         if (config.auto_player) {
             Log log;
