@@ -1,7 +1,6 @@
 #ifndef SERVER_PARSER
 #define SERVER_PARSER
 
-#include <iostream>
 #include <sys/socket.h>
 #include <unistd.h>
 #include "err.h"
@@ -16,7 +15,7 @@ struct client_config {
     std::string host;
     std::string port;
     int ipv = AF_UNSPEC;
-    char seat;
+    char seat = 0;
     bool auto_player = false;
 };
 
@@ -47,14 +46,14 @@ server_config get_server_config (int argc, char *argv[]) {
     while ((opt = getopt(argc, argv, "p:f:t:")) != -1) {
         switch (opt) {
             case 'p':
-                ans.port = std::atoi(optarg);
+                ans.port = std::stoi(optarg);
                 break;
             case 'f':
                 ans.filename = std::string(optarg);
                 file_set = true;
                 break;
             case 't':
-                ans.timeout = std::atoi(optarg);
+                ans.timeout = std::stoi(optarg);
                 break;
             default:
                 details::usage_server();

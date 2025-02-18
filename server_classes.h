@@ -5,10 +5,8 @@
 #include <atomic>
 #include <bitset>
 #include <condition_variable>
-#include <stdexcept>
 #include <poll.h>
 #include <unordered_map>
-#include <unistd.h>
 
 #include "card.h"
 #include "common.h"

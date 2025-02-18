@@ -13,13 +13,13 @@ $(TARGET1): $(TARGET1).o err.o card.o common.o
 $(TARGET2): $(TARGET2).o err.o card.o common.o server_players.o
 	$(CXX) $(CXXFLAGS) -o $@ $^
 
-kierki-klient.o: client.cpp parser.h common.h
+kierki-klient.o: client.cpp parser.h common.h err.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-kierki-serwer.o: server.cpp parser.h server_communication.h server_players.h
+kierki-serwer.o: server.cpp parser.h server_threads.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-common.o: common.cpp common.h card.h
+common.o: common.cpp common.h card.h err.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
-server_players.o: server_players.cpp server_players.h common.h err.h card.h server_inside.h
+server_players.o: server_threads.cpp server_threads.h common.h err.h card.h server_classes.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 %.o: %.cpp %.h
 	$(CXX) $(CXXFLAGS) -c $< -o $@

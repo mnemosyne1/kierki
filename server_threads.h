@@ -2,9 +2,7 @@
 #define SERVER_PLAYERS_H
 
 #include <arpa/inet.h>
-#include <array>
 #include <fstream>
-#include <vector>
 #include "common.h"
 
 void handle_player(

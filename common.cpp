@@ -1,7 +1,6 @@
 #include <cmath>
 #include <unistd.h>
 #include <iomanip>
-#include <iostream>
 #include <mutex>
 #include <poll.h>
 #include <arpa/inet.h>
@@ -58,13 +57,12 @@ ssize_t get_line (SendData &send_data, std::string &ans, size_t max_length) {
 // Following function comes from Stevens' "UNIX Network Programming" book...
 // ...but has been adapted to this task by myself (JO)
 // Write n bytes to a descriptor.
-ssize_t writen(SendData &send_data, const void *vptr, size_t n){
+ssize_t writen(SendData &send_data, const void *vptr, size_t n) {
     ssize_t nleft, nwritten;
     const char *ptr;
 
     ptr = (const char*) vptr;  // Can't do pointer arithmetic on void*.
     nleft = n;
-    timespec t{};
     auto now = std::chrono::system_clock::now();
     while (nleft > 0) {
         now = std::chrono::system_clock::now();
@@ -79,7 +77,7 @@ ssize_t writen(SendData &send_data, const void *vptr, size_t n){
     auto nsec_point = std::chrono::time_point_cast<std::chrono::nanoseconds>(now)
                       - std::chrono::time_point_cast<std::chrono::nanoseconds>(sec_point);
     auto nsec = nsec_point.count();
-    t = {.tv_sec = sec, .tv_nsec = nsec};
+    timespec t = {.tv_sec = sec, .tv_nsec = nsec};
     std::string msg(static_cast<const char *>(vptr), n);
     send_data.log_message(msg.c_str(), t, true);
     return n;
@@ -125,7 +123,6 @@ void SendData::log_message(const char *msg, const timespec &t, bool send) {
         std::put_time(std::localtime(&t.tv_sec), "%Y-%m-%dT%H:%M:%S") << '.' <<
         std::setw(3) << std::setfill('0') << t.tv_nsec / 1'000'000 << "] " << msg;
     log.emplace_back(t, ss.str());
-    //std::cerr << ss.str();
 }
 
 static std::mutex mutex;
@@ -172,8 +169,9 @@ void decrement_event_fd(int event_fd, uint64_t times) {
 void clear_event_fd(int event_fd) {
     if (event_fd == -1)
         throw std::runtime_error("initialising eventfd");
-    pollfd pfd = {.fd = event_fd, .events = POLLIN, .revents = 0};
+    pollfd pfd{};
     while (true) {
+        pfd = {.fd = event_fd, .events = POLLIN, .revents = 0};
         poll(&pfd, 1, 0);
         if (pfd.revents & POLLIN)
             decrement_event_fd(event_fd);

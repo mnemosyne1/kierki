@@ -54,7 +54,7 @@ constexpr std::vector<Card> parse_cards(const std::string &input) {
 
 constexpr std::string cards_to_string(const std::vector<Card> &cards) {
     std::string ans;
-    for (const auto &c : cards)
+    for (const Card &c : cards)
         ans += c.to_string();
     return ans;
 }

@@ -96,14 +96,17 @@ const std::regex TAKEN_REGEX ("TAKEN([1-9]|1[0-3])" +
                               multiply_string(CARD_REGEX, 4) + "([NESW])\r\n");
 const std::regex SCORE_REGEX("SCORE" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
 const std::regex TOTAL_REGEX("TOTAL" + multiply_string("([NESW])(\\d+)", 4) + "\r\n");
+
+// MESSAGE IDS
+
 constexpr int BUSY = 0;
-constexpr int DEAL = 1;
-constexpr int TRICK = 2;
-constexpr int WRONG = 3;
-constexpr int TAKEN = 4;
-constexpr int SCORE = 5;
-constexpr int TOTAL = 6;
-constexpr int INCORRECT = 7;
+constexpr int DEAL = BUSY + 1; // 1
+constexpr int TRICK = DEAL + 1; // 2
+constexpr int WRONG = TRICK + 1; // 3
+constexpr int TAKEN = WRONG + 1; // 4
+constexpr int SCORE = TAKEN + 1; // 5
+constexpr int TOTAL = SCORE + 1; // 6
+constexpr int INCORRECT = TOTAL + 1; // 7
 constexpr int REGEXES_NO = 7;
 const std::regex regexes[REGEXES_NO] = {BUSY_REGEX, DEAL_REGEX,
                                         TRICK_REGEX, WRONG_REGEX,
